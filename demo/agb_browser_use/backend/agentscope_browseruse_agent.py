@@ -6,6 +6,15 @@ from agentscope.model import DashScopeChatModel
 
 from prompts import SYSTEM_PROMPT
 
+# AGB Cloud
+from agb import AGB
+from agb.session_params import CreateSessionParams
+from agb.modules.browser import BrowserOption, BrowserViewport
+
+if os.path.exists(".env"):
+    from dotenv import load_dotenv
+    load_dotenv(".env")
+
 from agentscope_runtime.engine.services.redis_session_history_service import (
     RedisSessionHistoryService,
 )
@@ -23,7 +32,6 @@ from agentscope_runtime.engine.services.environment_manager import (
     EnvironmentManager,
 )
 from agentscope_runtime.engine.services import SandboxService
-from agentscope_runtime.sandbox.custom.agb_sandbox import AgbSandbox
 from agentscope_runtime.engine.services.memory_service import (
     InMemoryMemoryService,
 )
@@ -56,6 +64,10 @@ from agentscope_runtime.sandbox.tools.browser import (
     browser_tab_select,
     browser_tab_close,
     browser_wait_for,
+)
+from agentscope_runtime.sandbox.tools.function_tool import (
+    FunctionTool,
+    function_tool,
 )
 
 
@@ -157,43 +169,63 @@ class AgentscopeBrowseruseAgent:
             # no memory service
             pass
 
-        # Prefer AgbSandbox directly (registered with env injection)
-        try:
-            agb_box = AgbSandbox()
-            # if browser_ws provided, use it; otherwise try info()
-            self.ws = getattr(agb_box, "browser_ws", "") or (
-                agb_box.get_info().get("browser_ws", "") if isinstance(agb_box.get_info(), dict) else ""
-            )
-            self._sandbox = agb_box
-        except Exception:
-            # fallback to original SandboxService flow
-            if self.config["backend"]["sandbox-type"] == "local":
-                self.sandbox_service = SandboxService()
-            else:
-                self.sandbox_service = SandboxService(
-                    base_url=self.config["backend"]["sandbox-remote"]["url"],
-                )
-            await self.sandbox_service.start()
-
-            self.environment_manager = EnvironmentManager(
-                sandbox_service=self.sandbox_service,
-            )
-            sandboxes = self.sandbox_service.connect(
-                session_id=self.session_id,
-                user_id=self.user_id,
-                tools=self.tools,
-            )
-            if len(sandboxes) > 0:
-                sandbox = sandboxes[0]
-                sandbox.list_tools()
-                self.ws = sandbox.browser_ws
-            else:
-                self.ws = ""
-
+        # initialize context/environment managers
         self.context_manager = ContextManager(
             memory_service=mem_service,
             session_history_service=session_history_service,
         )
+        self.environment_manager = EnvironmentManager()
+
+        # Initialize AGB session and browser instead of sandbox browser
+        agb = AGB()  # uses AGB_API_KEY from env
+        params = CreateSessionParams(image_id=self.config["backend"].get("agb-image-id", "agb-browser-use-1"))
+        result = agb.create(params)
+        if not result.success:
+            raise RuntimeError(f"Failed to create AGB session: {result.error_message}")
+        session = result.session
+
+        # Configure and initialize browser
+        option = BrowserOption(
+            use_stealth=True,
+            viewport=BrowserViewport(width=1366, height=768),
+        )
+        success = session.browser.initialize(option)
+        if not success:
+            agb.delete(session)
+            raise RuntimeError("Failed to initialize AGB browser")
+
+        # Save for later cleanup; set CDP endpoint
+        self._agb = agb
+        self._agb_session = session
+        self.ws = session.browser.get_endpoint_url()
+        # Also expose resource_url for iframe rendering
+        try:
+            info = session.get_info() if hasattr(session, "get_info") else None
+            self.resource_url = getattr(session, "resource_url", None) or (
+                info.get("resource_url") if isinstance(info, dict) else None
+            )
+        except Exception:
+            self.resource_url = None
+
+        # -------- AGB Tools (Scheme A): expose minimal tool for model usage --------
+        @function_tool(
+            name="agb_get_browser_info",
+            description="Get current AGB browser connection info (CDP endpoint and resource_url).",
+        )
+        def agb_get_browser_info() -> dict:
+            return {
+                "endpoint": self.ws or "",
+                "resource_url": self.resource_url or "",
+            }
+
+        # Attach AGB tool to agent
+        self.tools.append(agb_get_browser_info)
+        if hasattr(self, "agent") and hasattr(self.agent, "tools"):
+            try:
+                self.agent.tools = self.tools
+            except Exception:
+                pass
+        # -------------------------------------------------------------------------
 
         runner = Runner(
             agent=self.agent,
@@ -235,6 +267,11 @@ class AgentscopeBrowseruseAgent:
     async def close(self):
         if self.is_closed:
             return
-        await self.sandbox_service.stop()
+        # Cleanup AGB session if exists
+        try:
+            if hasattr(self, "_agb") and hasattr(self, "_agb_session") and self._agb_session:
+                self._agb.delete(self._agb_session)
+        except Exception:
+            pass
         self.ws = ""
         self.is_closed = True
