@@ -68,3 +68,5 @@ logs/
 # frontend build artifacts
 **/frontend/build/
 **/build/
+
+.cursor

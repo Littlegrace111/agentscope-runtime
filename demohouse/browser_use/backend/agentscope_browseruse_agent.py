@@ -23,7 +23,6 @@ from agentscope_runtime.engine.services.environment_manager import (
     EnvironmentManager,
 )
 from agentscope_runtime.engine.services import SandboxService
-from agentscope_runtime.sandbox.custom.agb_sandbox import AgbSandbox
 from agentscope_runtime.engine.services.memory_service import (
     InMemoryMemoryService,
 )
@@ -157,43 +156,34 @@ class AgentscopeBrowseruseAgent:
             # no memory service
             pass
 
-        # Prefer AgbSandbox directly (registered with env injection)
-        try:
-            agb_box = AgbSandbox()
-            # if browser_ws provided, use it; otherwise try info()
-            self.ws = getattr(agb_box, "browser_ws", "") or (
-                agb_box.get_info().get("browser_ws", "") if isinstance(agb_box.get_info(), dict) else ""
+        if self.config["backend"]["sandbox-type"] == "local":
+            self.sandbox_service = SandboxService()
+        else:
+            self.sandbox_service = SandboxService(
+                base_url=self.config["backend"]["sandbox-remote"]["url"],
             )
-            self._sandbox = agb_box
-        except Exception:
-            # fallback to original SandboxService flow
-            if self.config["backend"]["sandbox-type"] == "local":
-                self.sandbox_service = SandboxService()
-            else:
-                self.sandbox_service = SandboxService(
-                    base_url=self.config["backend"]["sandbox-remote"]["url"],
-                )
-            await self.sandbox_service.start()
-
-            self.environment_manager = EnvironmentManager(
-                sandbox_service=self.sandbox_service,
-            )
-            sandboxes = self.sandbox_service.connect(
-                session_id=self.session_id,
-                user_id=self.user_id,
-                tools=self.tools,
-            )
-            if len(sandboxes) > 0:
-                sandbox = sandboxes[0]
-                sandbox.list_tools()
-                self.ws = sandbox.browser_ws
-            else:
-                self.ws = ""
+        await self.sandbox_service.start()
 
         self.context_manager = ContextManager(
             memory_service=mem_service,
             session_history_service=session_history_service,
         )
+        self.environment_manager = EnvironmentManager(
+            sandbox_service=self.sandbox_service,
+        )
+        sandboxes = self.sandbox_service.connect(
+            session_id=self.session_id,
+            user_id=self.user_id,
+            tools=self.tools,
+        )
+
+        if len(sandboxes) > 0:
+            sandbox = sandboxes[0]  # we use the first sandbox
+            sandbox.list_tools()  # TODO: @weirui
+            ws = sandbox.browser_ws
+            self.ws = ws
+        else:
+            self.ws = ""
 
         runner = Runner(
             agent=self.agent,

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=unused-argument
 import traceback
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Any, Dict, Callable, Union
 
 import inspect
@@ -116,12 +118,25 @@ class FunctionTool(Tool):
         # Filter kwargs to only include parameters that the function accepts
         filtered_kwargs = self._filter_kwargs(kwargs)
         try:
+            value = self._func(**filtered_kwargs)
+            # If the tool function returned a coroutine, resolve it
+            if inspect.iscoroutine(value):
+                try:
+                    # If no running loop, run directly
+                    asyncio.get_running_loop()
+                    # A loop is running in this thread; run the coroutine in a worker thread
+                    with ThreadPoolExecutor(max_workers=1) as ex:
+                        value = ex.submit(lambda: asyncio.run(value)).result()
+                except RuntimeError:
+                    # No running loop; safe to run directly
+                    value = asyncio.run(value)
+
             return {
                 "meta": None,
                 "content": [
                     {
                         "type": "text",
-                        "text": str(self._func(**filtered_kwargs)),
+                        "text": str(value),
                         "annotations": None,
                         "description": "None",
                     },
