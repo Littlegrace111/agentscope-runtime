@@ -68,3 +68,4 @@ class SandboxType(DynamicEnum):
     APPWORLD = "appworld"
     BFCL = "bfcl"
     WEBSHOP = "webshop"
+    AGB = "agb"  # AGB Cloud-enabled sandbox
