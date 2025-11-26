@@ -1,0 +1,119 @@
+@startuml Tracing模块组件图_中文
+
+!theme plain
+
+package "用户代码层" {
+  component [用户应用代码] as UserCode
+}
+
+package "Tracing模块" {
+
+  package "装饰器层" {
+    component [@trace装饰器] as Decorator
+    note right of Decorator
+      提供装饰器接口
+      自动检测函数类型
+      路由到对应的执行器
+    end note
+  }
+
+  package "核心层" {
+    component [wrapper.py] as Wrapper {
+      interface "函数执行器" as Executor
+      interface "参数提取" as PayloadExtractor
+      interface "上下文管理" as ContextManager
+    }
+
+    component [Tracer] as Tracer {
+      interface "事件管理" as EventManager
+    }
+
+    component [EventContext] as EventContext {
+      interface "追踪操作" as TraceOps
+    }
+  }
+
+  package "处理器层" {
+    component [TracerHandler接口] as HandlerInterface
+
+    component [LocalLogHandler] as LocalHandler {
+      interface "日志记录" as Logging
+    }
+
+    component [BaseLogHandler] as BaseHandler {
+      interface "基础日志" as BaseLogging
+    }
+  }
+
+  package "工具层" {
+    component [TracingUtil] as Util {
+      interface "上下文工具" as ContextUtil
+    }
+
+    component [message_util.py] as MessageUtil {
+      interface "消息处理" as MessageOps
+    }
+
+    component [tracing_metric.py] as Metric {
+      interface "类型定义" as TypeDef
+    }
+  }
+
+  package "OpenTelemetry集成" {
+    component [OT Tracer] as OTTracer {
+      interface "Span管理" as SpanManager
+    }
+
+    component [OT Exporter] as OTExporter {
+      interface "数据导出" as Export
+    }
+  }
+
+  package "日志输出" {
+    component [文件日志] as FileLog
+    component [控制台日志] as ConsoleLog
+    component [JSON格式化器] as JsonFormatter
+  }
+}
+
+' 依赖关系
+UserCode --> Decorator : 使用
+Decorator --> Wrapper : 调用
+Wrapper --> Tracer : 使用
+Wrapper --> OTTracer : 创建Span
+Tracer --> EventContext : 创建
+Tracer --> HandlerInterface : 使用
+EventContext --> HandlerInterface : 调用
+HandlerInterface <|.. LocalHandler : 实现
+HandlerInterface <|.. BaseHandler : 实现
+LocalHandler --> JsonFormatter : 使用
+LocalHandler --> FileLog : 写入
+LocalHandler --> ConsoleLog : 输出
+Wrapper --> Util : 使用
+Wrapper --> MessageUtil : 使用
+Wrapper --> Metric : 使用
+OTTracer --> OTExporter : 导出
+OTExporter --> [外部监控系统] : 上报
+
+note top of Wrapper
+  核心包装器
+  - 函数类型检测
+  - 参数提取
+  - 上下文初始化
+  - Span创建
+end note
+
+note bottom of Tracer
+  追踪器核心
+  - 事件生命周期管理
+  - Handler调度
+  - 异常处理
+end note
+
+note right of HandlerInterface
+  策略模式接口
+  支持多种Handler实现
+  可扩展新的输出格式
+end note
+
+@enduml

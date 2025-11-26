@@ -1,0 +1,121 @@
+@startuml Tracing Flow Sequence Diagram_English
+
+!theme plain
+
+actor User Code
+participant "@trace Decorator" as Decorator
+participant "wrapper.py" as Wrapper
+participant "Tracer" as Tracer
+participant "EventContext" as EventContext
+participant "LocalLogHandler" as Handler
+participant "OpenTelemetry\nSpan" as OTSpan
+participant "Traced Function" as Function
+
+== Function Call Phase ==
+
+User Code -> Decorator: Call decorated function
+activate Decorator
+
+Decorator -> Wrapper: Detect function type\n(sync/async/generator)
+activate Wrapper
+
+Wrapper -> Wrapper: _init_trace_context()\nInitialize trace context
+
+Wrapper -> Wrapper: _get_start_payload()\nExtract function arguments
+
+Wrapper -> Wrapper: _validate_trace_options()\nValidate trace options
+
+Wrapper -> Wrapper: _set_request_id()\nSet request ID
+
+Wrapper -> OTSpan: start_as_current_span()\nCreate OpenTelemetry Span
+activate OTSpan
+
+OTSpan -> OTSpan: Set span attributes\n(gen_ai.span.kind, etc.)
+
+== Event Start Phase ==
+
+Wrapper -> Tracer: event(span, event_name, payload)
+activate Tracer
+
+Tracer -> Tracer: Record start time
+
+loop For each Handler
+    Tracer -> Handler: on_start(event_name, payload)
+    activate Handler
+    Handler -> Handler: Log start event\n(format JSON)
+    Handler --> Tracer
+    deactivate Handler
+end
+
+Tracer -> EventContext: Create EventContext
+activate EventContext
+
+Tracer --> Wrapper: Return EventContext
+
+== Function Execution Phase ==
+
+Wrapper -> Function: Execute decorated function
+activate Function
+
+alt Function execution succeeds
+    Function -> Function: Execute business logic
+    Function --> Wrapper: Return result
+    deactivate Function
+
+    Wrapper -> Wrapper: _obj_to_dict(result)\nConvert result to dict
+
+    Wrapper -> OTSpan: set_attribute()\nSet output attributes
+
+    Wrapper -> EventContext: on_end(payload=end_payload)
+    EventContext -> EventContext: Save end_payload
+
+else Function execution fails
+    Function -> Function: Raise exception
+    Function --> Wrapper: Exception
+    deactivate Function
+
+    Wrapper -> OTSpan: set_status(ERROR)\nSet error status
+
+    Wrapper -> EventContext: on_log(str(e))\nLog error message
+
+    loop For each Handler
+        Tracer -> Handler: on_error(event_name, payload, error, start_time, traceback_info)
+        activate Handler
+        Handler -> Handler: Log error event
+        Handler --> Tracer
+        deactivate Handler
+    end
+
+    Wrapper --> User Code: Re-raise exception
+end
+
+== Event End Phase ==
+
+Wrapper -> EventContext: finalize()
+EventContext -> EventContext: _end()
+
+loop For each Handler
+    EventContext -> Handler: on_end(event_name, start_payload, end_payload, start_time)
+    activate Handler
+    Handler -> Handler: Calculate execution time
+    Handler -> Handler: Log end event\n(format JSON)
+    Handler --> EventContext
+    deactivate Handler
+end
+
+EventContext --> Wrapper
+deactivate EventContext
+
+Wrapper -> OTSpan: End span
+deactivate OTSpan
+
+Tracer --> Wrapper
+deactivate Tracer
+
+Wrapper --> Decorator
+deactivate Wrapper
+
+Decorator --> User Code: Return result
+deactivate Decorator
+
+@enduml

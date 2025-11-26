@@ -1,0 +1,17 @@
+.chat-interface {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background-color: white;
+}
+
+.chat-header {
+  padding: 1rem;
+  border-bottom: 1px solid #ddd;
+  background-color: #f8f9fa;
+}
+
+.chat-header h2 {
+  font-size: 1.2rem;
+  color: #333;
+}

@@ -1,0 +1,14 @@
+# Backend dependencies
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
+
+# AgentScope
+# Note: agentscope-runtime uses the source code from the current project
+# Install it with: pip install -e . (from project root)
+agentscope>=0.1.0
+
+# Additional dependencies
+aiofiles>=23.0.0

@@ -1,0 +1,121 @@
+@startuml 追踪流程序列图_中文
+
+!theme plain
+
+actor 用户代码
+participant "@trace装饰器" as Decorator
+participant "wrapper.py" as Wrapper
+participant "Tracer" as Tracer
+participant "EventContext" as EventContext
+participant "LocalLogHandler" as Handler
+participant "OpenTelemetry\nSpan" as OTSpan
+participant "被追踪函数" as Function
+
+== 函数调用阶段 ==
+
+用户代码 -> Decorator: 调用被装饰的函数
+activate Decorator
+
+Decorator -> Wrapper: 检测函数类型\n(同步/异步/生成器)
+activate Wrapper
+
+Wrapper -> Wrapper: _init_trace_context()\n初始化追踪上下文
+
+Wrapper -> Wrapper: _get_start_payload()\n提取函数参数
+
+Wrapper -> Wrapper: _validate_trace_options()\n验证追踪选项
+
+Wrapper -> Wrapper: _set_request_id()\n设置请求ID
+
+Wrapper -> OTSpan: start_as_current_span()\n创建OpenTelemetry Span
+activate OTSpan
+
+OTSpan -> OTSpan: 设置Span属性\n(gen_ai.span.kind等)
+
+== 事件开始阶段 ==
+
+Wrapper -> Tracer: event(span, event_name, payload)
+activate Tracer
+
+Tracer -> Tracer: 记录开始时间
+
+loop 遍历所有Handler
+    Tracer -> Handler: on_start(event_name, payload)
+    activate Handler
+    Handler -> Handler: 记录开始日志\n(格式化JSON)
+    Handler --> Tracer
+    deactivate Handler
+end
+
+Tracer -> EventContext: 创建EventContext
+activate EventContext
+
+Tracer --> Wrapper: 返回EventContext
+
+== 函数执行阶段 ==
+
+Wrapper -> Function: 执行被装饰的函数
+activate Function
+
+alt 函数执行成功
+    Function -> Function: 执行业务逻辑
+    Function --> Wrapper: 返回结果
+    deactivate Function
+
+    Wrapper -> Wrapper: _obj_to_dict(result)\n转换返回值为字典
+
+    Wrapper -> OTSpan: set_attribute()\n设置输出属性
+
+    Wrapper -> EventContext: on_end(payload=end_payload)
+    EventContext -> EventContext: 保存end_payload
+
+else 函数执行异常
+    Function -> Function: 抛出异常
+    Function --> Wrapper: 异常
+    deactivate Function
+
+    Wrapper -> OTSpan: set_status(ERROR)\n设置错误状态
+
+    Wrapper -> EventContext: on_log(str(e))\n记录错误日志
+
+    loop 遍历所有Handler
+        Tracer -> Handler: on_error(event_name, payload, error, start_time, traceback_info)
+        activate Handler
+        Handler -> Handler: 记录错误日志
+        Handler --> Tracer
+        deactivate Handler
+    end
+
+    Wrapper --> 用户代码: 重新抛出异常
+end
+
+== 事件结束阶段 ==
+
+Wrapper -> EventContext: finalize()
+EventContext -> EventContext: _end()
+
+loop 遍历所有Handler
+    EventContext -> Handler: on_end(event_name, start_payload, end_payload, start_time)
+    activate Handler
+    Handler -> Handler: 计算执行时间
+    Handler -> Handler: 记录结束日志\n(格式化JSON)
+    Handler --> EventContext
+    deactivate Handler
+end
+
+EventContext --> Wrapper
+deactivate EventContext
+
+Wrapper -> OTSpan: 结束Span
+deactivate OTSpan
+
+Tracer --> Wrapper
+deactivate Tracer
+
+Wrapper --> Decorator
+deactivate Wrapper
+
+Decorator --> 用户代码: 返回结果
+deactivate Decorator
+
+@enduml

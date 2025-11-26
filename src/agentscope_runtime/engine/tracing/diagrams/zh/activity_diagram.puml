@@ -1,0 +1,99 @@
+@startuml 追踪活动图_中文
+
+!theme plain
+
+start
+
+:用户调用被@trace装饰的函数;
+
+:检测函数类型;
+
+if (函数类型?) then (同步函数)
+  :执行sync_exec;
+elseif (异步函数) then
+  :执行async_exec;
+elseif (生成器函数) then
+  :执行iter_task;
+elseif (异步生成器函数) then
+  :执行async_iter_task;
+endif
+
+:初始化追踪上下文\n(_init_trace_context);
+
+:提取函数参数\n(_get_start_payload);
+
+:验证追踪选项\n(_validate_trace_options);
+
+:设置请求ID\n(_set_request_id);
+
+:创建OpenTelemetry Span;
+
+:设置Span属性\n(gen_ai.span.kind等);
+
+:创建Tracer.event上下文;
+
+:记录开始时间;
+
+partition Handler处理 {
+  :遍历所有Handler;
+  :调用Handler.on_start();
+  :记录开始日志;
+}
+
+:执行被装饰的函数;
+
+if (函数类型?) then (普通函数)
+  :获取函数返回值;
+  :转换为字典格式;
+  :设置输出属性;
+else (生成器函数)
+  :初始化累积列表;
+  :开始迭代生成器;
+
+  repeat
+    :获取下一个响应块;
+    :添加到累积列表;
+
+    if (第一个响应?) then (是)
+      :记录第一个响应\n(_trace_first_resp);
+      :设置首次响应延迟;
+    endif
+
+    if (检测完成原因?) then (是)
+      :记录最后一个响应\n(_trace_last_resp);
+      :设置完成原因属性;
+    endif
+
+  repeat while (生成器未结束?) is (否)
+
+  :合并所有响应块\n(_trace_merged_resp);
+  :设置合并后的输出属性;
+endif
+
+if (执行成功?) then (是)
+  partition Handler处理 {
+    :遍历所有Handler;
+    :调用Handler.on_end();
+    :计算执行时间;
+    :记录结束日志;
+  }
+
+  :结束Span;
+  :返回结果;
+else (异常)
+  :设置Span状态为ERROR;
+
+  partition Handler处理 {
+    :遍历所有Handler;
+    :调用Handler.on_error();
+    :记录错误日志;
+    :记录堆栈跟踪;
+  }
+
+  :结束Span;
+  :重新抛出异常;
+endif
+
+stop
+
+@enduml

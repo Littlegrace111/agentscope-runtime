@@ -1,0 +1,99 @@
+@startuml Tracing Activity Diagram_English
+
+!theme plain
+
+start
+
+:User calls function decorated with @trace;
+
+:Detect function type;
+
+if (Function type?) then (Synchronous function)
+  :Execute sync_exec;
+elseif (Async function) then
+  :Execute async_exec;
+elseif (Generator function) then
+  :Execute iter_task;
+elseif (Async generator function) then
+  :Execute async_iter_task;
+endif
+
+:Initialize trace context\n(_init_trace_context);
+
+:Extract function arguments\n(_get_start_payload);
+
+:Validate trace options\n(_validate_trace_options);
+
+:Set request ID\n(_set_request_id);
+
+:Create OpenTelemetry Span;
+
+:Set span attributes\n(gen_ai.span.kind, etc.);
+
+:Create Tracer.event context;
+
+:Record start time;
+
+partition Handler Processing {
+  :Iterate all Handlers;
+  :Call Handler.on_start();
+  :Log start event;
+}
+
+:Execute decorated function;
+
+if (Function type?) then (Regular function)
+  :Get function return value;
+  :Convert to dictionary format;
+  :Set output attributes;
+else (Generator function)
+  :Initialize accumulation list;
+  :Start iterating generator;
+
+  repeat
+    :Get next response chunk;
+    :Add to accumulation list;
+
+    if (First response?) then (Yes)
+      :Log first response\n(_trace_first_resp);
+      :Set first response delay;
+    endif
+
+    if (Check finish reason?) then (Yes)
+      :Log last response\n(_trace_last_resp);
+      :Set finish reason attribute;
+    endif
+
+  repeat while (Generator not ended?) is (No)
+
+  :Merge all response chunks\n(_trace_merged_resp);
+  :Set merged output attributes;
+endif
+
+if (Execution successful?) then (Yes)
+  partition Handler Processing {
+    :Iterate all Handlers;
+    :Call Handler.on_end();
+    :Calculate execution time;
+    :Log end event;
+  }
+
+  :End span;
+  :Return result;
+else (Exception)
+  :Set span status to ERROR;
+
+  partition Handler Processing {
+    :Iterate all Handlers;
+    :Call Handler.on_error();
+    :Log error event;
+    :Log stack trace;
+  }
+
+  :End span;
+  :Re-raise exception;
+endif
+
+stop
+
+@enduml

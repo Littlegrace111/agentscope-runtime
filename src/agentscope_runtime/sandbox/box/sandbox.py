@@ -7,7 +7,6 @@ from typing import Any, Optional
 from ..enums import SandboxType
 from ..manager.sandbox_manager import SandboxManager
 
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -121,6 +120,15 @@ class Sandbox:
                 f"Cleanup {self.sandbox_id} error: {e}\n"
                 f"{traceback.format_exc()}",
             )
+
+    def cleanup(self):
+        """
+        Clean up resources associated with the sandbox.
+
+        This is a public method that can be called explicitly to clean up
+        sandbox resources. It calls the internal _cleanup() method.
+        """
+        self._cleanup()
 
     def __enter__(self):
         return self

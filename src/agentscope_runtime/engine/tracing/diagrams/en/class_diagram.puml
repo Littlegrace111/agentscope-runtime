@@ -1,0 +1,143 @@
+@startuml Tracing Module Class Diagram_English
+
+!theme plain
+skinparam classAttributeIconSize 0
+
+package "tracing module" {
+
+  abstract class TracerHandler {
+    + {abstract} on_start(event_name: str, payload: Dict, **kwargs)
+    + {abstract} on_end(event_name: str, start_payload: Dict, end_payload: Dict, start_time: float, **kwargs)
+    + {abstract} on_log(message: str, **kwargs)
+    + {abstract} on_error(event_name: str, start_payload: Dict, error: Exception, start_time: float, traceback_info: str, **kwargs)
+  }
+
+  class BaseLogHandler {
+    - logger: Logger
+    + on_start(event_name: str, payload: Dict, **kwargs)
+    + on_end(event_name: str, start_payload: Dict, end_payload: Dict, start_time: float, **kwargs)
+    + on_log(message: str, **kwargs)
+    + on_error(event_name: str, start_payload: Dict, error: Exception, start_time: float, traceback_info: str, **kwargs)
+  }
+
+  class LocalLogHandler {
+    - logger: Logger
+    - log_dir: str
+    - max_bytes: int
+    - backup_count: int
+    - enable_console: bool
+    + __init__(log_level, log_file_name, log_dir, max_bytes, backup_count, enable_console, **kwargs)
+    - _set_file_handle(log_dir, log_file_name, max_bytes, backup_count)
+    - _deep_update(original: Dict, update: Dict)
+    + on_start(event_name: str, payload: Dict, **kwargs)
+    + on_end(event_name: str, start_payload: Dict, end_payload: Dict, start_time: float, **kwargs)
+    + on_log(message: str, **kwargs)
+    + on_error(event_name: str, start_payload: Dict, error: Exception, start_time: float, traceback_info: str, **kwargs)
+  }
+
+  class Tracer {
+    - handlers: List[TracerHandler]
+    + __init__(handlers: List[TracerHandler])
+    + event(span: Any, event_name: str, payload: Dict, **kwargs): EventContext
+    + log(message: str, **kwargs)
+  }
+
+  class EventContext {
+    - span: Any
+    - handlers: List[TracerHandler]
+    - event_name: str
+    - start_time: float
+    - start_payload: Dict
+    - end_payload: Dict
+    - kwargs: Dict
+    + __init__(span, handlers, event_name, start_time, start_payload)
+    + on_end(payload: Dict, **kwargs)
+    + on_log(message: str, **kwargs)
+    + set_attribute(key: str, value: Any)
+    + get_trace_context(): Context
+    + finalize(start_payload: Dict)
+    - _end(start_payload: Dict)
+  }
+
+  class TracingUtil {
+    + {static} set_request_id(value: str)
+    + {static} get_request_id(default_value: str): str
+    + {static} set_trace_header(trace_headers: dict)
+    + {static} get_trace_header(): dict
+    + {static} set_common_attributes(attributes: dict)
+    + {static} get_common_attributes(): dict
+    + {static} clear_common_attributes()
+  }
+
+  class TraceType {
+    + LLM: str
+    + TOOL: str
+    + AGENT_STEP: str
+    + MEMORY: str
+    + SEARCH: str
+    + AIGC: str
+    + RAG: str
+    + INTENTION: str
+    + PLUGIN: str
+    + FUNCTION_CALL: str
+    + AGENT: str
+    + PLANNING: str
+    + CHAIN: str
+    + RETRIEVER: str
+    + RERANKER: str
+    + EMBEDDING: str
+    + TASK: str
+    + GUARDRAIL: str
+    + REWRITER: str
+    + OTHER: str
+    + {static} add_type(name: str, value: str)
+  }
+
+  class LogContext {
+    + time: str
+    + step: str
+    + model: str
+    + user_id: str
+    + task_id: str
+    + code: str
+    + message: str
+    + request_id: str
+    + context: Dict
+    + interval: Dict
+    + service_id: str
+    + service_name: str
+    + ds_service_id: str
+    + ds_service_name: str
+  }
+
+  class JsonFormatter {
+    + format(record: LogRecord): str
+  }
+}
+
+' Relationship definitions
+TracerHandler <|-- BaseLogHandler
+TracerHandler <|-- LocalLogHandler
+Tracer *-- TracerHandler : uses
+Tracer ..> EventContext : creates
+EventContext *-- TracerHandler : uses
+LocalLogHandler ..> LogContext : uses
+LocalLogHandler ..> JsonFormatter : uses
+TracingUtil ..> TraceType : may use
+
+note right of TracerHandler
+  Strategy Pattern Interface
+  Defines tracing event handling specification
+end note
+
+note right of Tracer
+  Core Tracer Class
+  Manages tracing event lifecycle
+end note
+
+note right of EventContext
+  Event Context
+  Provides operation interface during tracing
+end note
+
+@enduml

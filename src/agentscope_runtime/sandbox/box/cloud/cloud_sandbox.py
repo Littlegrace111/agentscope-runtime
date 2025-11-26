@@ -7,11 +7,11 @@ don't rely on local container management but instead communicate directly
 with cloud APIs.
 """
 import logging
-from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
 
-from ...enums import SandboxType
 from ...box.sandbox import Sandbox
+from ...enums import SandboxType
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class CloudSandbox(Sandbox, ABC):
         self.sandbox_type = sandbox_type
         self.timeout = timeout
 
-        logger.info(f"Cloud sandbox initialized with ID: {self._sandbox_id}")
+        logger.info("Cloud sandbox initialized with ID: %s", self._sandbox_id)
 
     @abstractmethod
     def _initialize_cloud_client(self):
@@ -235,15 +235,25 @@ class CloudSandbox(Sandbox, ABC):
                 success = self._delete_cloud_sandbox(self._sandbox_id)
                 if success:
                     logger.info(
-                        f"Cloud session {self._sandbox_id} deleted "
-                        f"successfully",
+                        "Cloud session %s deleted successfully",
+                        self._sandbox_id,
                     )
                 else:
                     logger.warning(
-                        f"Failed to delete cloud session {self._sandbox_id}",
+                        "Failed to delete cloud session %s",
+                        self._sandbox_id,
                     )
         except Exception as e:
-            logger.error(f"Error during cloud sandbox cleanup: {e}")
+            logger.error("Error during cloud sandbox cleanup: %s", e)
+
+    def cleanup(self):
+        """
+        Clean up cloud sandbox resources.
+
+        This is a public method that can be called explicitly to clean up
+        cloud sandbox resources. It calls the internal _cleanup() method.
+        """
+        self._cleanup()
 
     def __enter__(self):
         """Context manager entry."""

@@ -1,0 +1,119 @@
+@startuml Tracing Module Component Diagram_English
+
+!theme plain
+
+package "User Code Layer" {
+  component [User Application Code] as UserCode
+}
+
+package "Tracing Module" {
+
+  package "Decorator Layer" {
+    component [@trace Decorator] as Decorator
+    note right of Decorator
+      Provides decorator interface
+      Auto-detects function type
+      Routes to corresponding executor
+    end note
+  }
+
+  package "Core Layer" {
+    component [wrapper.py] as Wrapper {
+      interface "Function Executor" as Executor
+      interface "Payload Extractor" as PayloadExtractor
+      interface "Context Manager" as ContextManager
+    }
+
+    component [Tracer] as Tracer {
+      interface "Event Manager" as EventManager
+    }
+
+    component [EventContext] as EventContext {
+      interface "Trace Operations" as TraceOps
+    }
+  }
+
+  package "Handler Layer" {
+    component [TracerHandler Interface] as HandlerInterface
+
+    component [LocalLogHandler] as LocalHandler {
+      interface "Logging" as Logging
+    }
+
+    component [BaseLogHandler] as BaseHandler {
+      interface "Base Logging" as BaseLogging
+    }
+  }
+
+  package "Utility Layer" {
+    component [TracingUtil] as Util {
+      interface "Context Utilities" as ContextUtil
+    }
+
+    component [message_util.py] as MessageUtil {
+      interface "Message Operations" as MessageOps
+    }
+
+    component [tracing_metric.py] as Metric {
+      interface "Type Definitions" as TypeDef
+    }
+  }
+
+  package "OpenTelemetry Integration" {
+    component [OT Tracer] as OTTracer {
+      interface "Span Manager" as SpanManager
+    }
+
+    component [OT Exporter] as OTExporter {
+      interface "Data Export" as Export
+    }
+  }
+
+  package "Log Output" {
+    component [File Log] as FileLog
+    component [Console Log] as ConsoleLog
+    component [JSON Formatter] as JsonFormatter
+  }
+}
+
+' Dependency relationships
+UserCode --> Decorator : uses
+Decorator --> Wrapper : calls
+Wrapper --> Tracer : uses
+Wrapper --> OTTracer : creates Span
+Tracer --> EventContext : creates
+Tracer --> HandlerInterface : uses
+EventContext --> HandlerInterface : calls
+HandlerInterface <|.. LocalHandler : implements
+HandlerInterface <|.. BaseHandler : implements
+LocalHandler --> JsonFormatter : uses
+LocalHandler --> FileLog : writes
+LocalHandler --> ConsoleLog : outputs
+Wrapper --> Util : uses
+Wrapper --> MessageUtil : uses
+Wrapper --> Metric : uses
+OTTracer --> OTExporter : exports
+OTExporter --> [External Monitoring System] : reports
+
+note top of Wrapper
+  Core Wrapper
+  - Function type detection
+  - Payload extraction
+  - Context initialization
+  - Span creation
+end note
+
+note bottom of Tracer
+  Tracer Core
+  - Event lifecycle management
+  - Handler dispatching
+  - Exception handling
+end note
+
+note right of HandlerInterface
+  Strategy Pattern Interface
+  Supports multiple Handler implementations
+  Extensible for new output formats
+end note
+
+@enduml
