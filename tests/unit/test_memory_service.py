@@ -2,7 +2,7 @@
 # pylint: disable=redefined-outer-name, protected-access
 import pytest
 import pytest_asyncio
-from agentscope_runtime.engine.services.memory_service import (
+from agentscope_runtime.engine.services.memory import (
     InMemoryMemoryService,
 )
 from agentscope_runtime.engine.schemas.agent_schemas import (
@@ -36,7 +36,7 @@ async def test_service_lifecycle(memory_service: InMemoryMemoryService):
     assert await memory_service.health() is True
     assert memory_service._store == {}
     await memory_service.stop()
-    assert memory_service._store == {}
+    assert memory_service._store is None
 
 
 @pytest.mark.asyncio
